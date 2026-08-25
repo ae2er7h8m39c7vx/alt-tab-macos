@@ -17,9 +17,7 @@ concurrency:
 jobs:
   build:
     name: Build OptionTab.app
-    # Pinned rather than macos-latest: the runner image rolls forward on its own
-    # schedule, and a Swift toolchain change should be a deliberate commit.
-    runs-on: macos-15
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -29,35 +27,32 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Build universal app bundle
+      - name: Build app bundle
         env:
-          UNIVERSAL: 1
+          ARCH: arm64
         run: ./build.sh
 
       - name: Verify bundle
         run: |
           test -x OptionTab.app/Contents/MacOS/OptionTab
           plutil -lint OptionTab.app/Contents/Info.plist
-          # Fail loudly if the universal build silently produced a single slice.
+          # Fail loudly if the runner image ever stops producing an arm64 binary.
           archs=$(lipo -archs OptionTab.app/Contents/MacOS/OptionTab)
           echo "architectures: $archs"
-          for want in arm64 x86_64; do
-            case " $archs " in
-              *" $want "*) ;;
-              *) echo "::error::missing $want slice"; exit 1 ;;
-            esac
-          done
+          if [ "$archs" != "arm64" ]; then
+            echo "::error::expected arm64, got $archs"; exit 1
+          fi
           codesign --verify --verbose OptionTab.app
 
       - name: Package
         # ditto, not zip: it is the only archiver that preserves the bundle's
         # symlinks, resource forks and code signature intact.
-        run: ditto -c -k --keepParent OptionTab.app OptionTab.zip
+        run: ditto -c -k --keepParent OptionTab.app OptionTab-arm64.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OptionTab-app
-          path: OptionTab.zip
+          name: OptionTab-arm64
+          path: OptionTab-arm64.zip
           if-no-files-found: error
 
   release:
@@ -71,7 +66,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: OptionTab-app
+          name: OptionTab-arm64
 
       - name: Write release notes
         run: |
@@ -91,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" OptionTab.zip \
+          gh release create "$GITHUB_REF_NAME" OptionTab-arm64.zip \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
             --notes-file NOTES.md

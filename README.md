@@ -21,11 +21,12 @@ Minimized windows appear at the end of the list and are un-minimized when chosen
 
 ## Build
 
-Requires macOS 12+ and Xcode command line tools.
+Requires macOS 12+ and Xcode command line tools. Releases target Apple Silicon;
+building natively on an Intel Mac works too.
 
 ```sh
-./build.sh                  # native binary for this machine
-UNIVERSAL=1 ./build.sh      # arm64 + x86_64, for distribution
+./build.sh                  # build for this machine
+ARCH=arm64 ./build.sh       # build for a specific architecture
 open ./OptionTab.app
 ```
 
@@ -79,11 +80,15 @@ finished product; this is a single-purpose ~600-line version with no configurati
 
 ## CI
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds on `macos-15`
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds on `macos-latest`
 for every push, PR and manual dispatch. It calls the same `build.sh` you run
-locally — CI and your machine cannot drift — with `UNIVERSAL=1`, then checks the
-result really does contain both an `arm64` and an `x86_64` slice before uploading
-`OptionTab.zip` as a workflow artifact.
+locally — CI and your machine cannot drift — with `ARCH=arm64`, then asserts the
+resulting binary really is arm64 before uploading `OptionTab-arm64.zip` as a
+workflow artifact.
+
+Releases are **Apple Silicon only**. Intel Macs are not supported; building for
+them is a matter of setting `ARCH=x86_64`, or dropping the `--arch` flag for a
+native build.
 
 Pushing a `v*` tag additionally publishes that zip as a GitHub release:
 

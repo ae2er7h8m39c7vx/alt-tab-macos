@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds OptionTab.app. Run this on the Mac, not in a Linux container.
 #
-#   ./build.sh              native binary for this machine
-#   UNIVERSAL=1 ./build.sh  arm64 + x86_64, for distributing to other Macs
+#   ./build.sh              build for this machine's architecture
+#   ARCH=arm64 ./build.sh   build for a specific architecture
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -10,12 +10,13 @@ cd "$(dirname "$0")"
 APP="OptionTab.app"
 CONFIG="release"
 
-ARCH_FLAGS=()
-if [[ "${UNIVERSAL:-0}" == "1" ]]; then
-    ARCH_FLAGS=(--arch arm64 --arch x86_64)
-fi
 # Note: macOS ships bash 3.2, where a bare "${empty[@]}" trips `set -u`,
 # hence the ${x[@]+...} guard on every expansion below.
+ARCH_FLAGS=()
+if [[ -n "${ARCH:-}" ]]; then
+    ARCH_FLAGS=(--arch "$ARCH")
+fi
+
 swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
 BIN="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)/OptionTab"
 
