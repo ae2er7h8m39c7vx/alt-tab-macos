@@ -1,0 +1,97 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build OptionTab.app
+    # Pinned rather than macos-latest: the runner image rolls forward on its own
+    # schedule, and a Swift toolchain change should be a deliberate commit.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build universal app bundle
+        env:
+          UNIVERSAL: 1
+        run: ./build.sh
+
+      - name: Verify bundle
+        run: |
+          test -x OptionTab.app/Contents/MacOS/OptionTab
+          plutil -lint OptionTab.app/Contents/Info.plist
+          # Fail loudly if the universal build silently produced a single slice.
+          archs=$(lipo -archs OptionTab.app/Contents/MacOS/OptionTab)
+          echo "architectures: $archs"
+          for want in arm64 x86_64; do
+            case " $archs " in
+              *" $want "*) ;;
+              *) echo "::error::missing $want slice"; exit 1 ;;
+            esac
+          done
+          codesign --verify --verbose OptionTab.app
+
+      - name: Package
+        # ditto, not zip: it is the only archiver that preserves the bundle's
+        # symlinks, resource forks and code signature intact.
+        run: ditto -c -k --keepParent OptionTab.app OptionTab.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OptionTab-app
+          path: OptionTab.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: OptionTab-app
+
+      - name: Write release notes
+        run: |
+          cat > NOTES.md <<'NOTES'
+          Ad-hoc signed and **not notarized**, so macOS quarantines the download.
+          After unzipping:
+
+          ```sh
+          xattr -dr com.apple.quarantine OptionTab.app
+          open OptionTab.app
+          ```
+
+          Then grant Accessibility access in System Settings > Privacy & Security.
+          NOTES
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" OptionTab.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file NOTES.md

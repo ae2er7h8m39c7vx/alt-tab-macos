@@ -24,7 +24,8 @@ Minimized windows appear at the end of the list and are un-minimized when chosen
 Requires macOS 12+ and Xcode command line tools.
 
 ```sh
-./build.sh
+./build.sh                  # native binary for this machine
+UNIVERSAL=1 ./build.sh      # arm64 + x86_64, for distribution
 open ./OptionTab.app
 ```
 
@@ -75,3 +76,30 @@ live window thumbnails.
 [AltTab](https://github.com/lwouis/alt-tab-macos) does all of this and much more —
 window thumbnails, per-app filtering, extensive preferences. Use it if you want a
 finished product; this is a single-purpose ~600-line version with no configuration.
+
+## CI
+
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds on `macos-15`
+for every push, PR and manual dispatch. It calls the same `build.sh` you run
+locally — CI and your machine cannot drift — with `UNIVERSAL=1`, then checks the
+result really does contain both an `arm64` and an `x86_64` slice before uploading
+`OptionTab.zip` as a workflow artifact.
+
+Pushing a `v*` tag additionally publishes that zip as a GitHub release:
+
+```sh
+git tag v1.0 && git push origin v1.0
+```
+
+The bundle is **ad-hoc signed and not notarized**, because notarization needs a
+paid Apple Developer ID and its secrets. Anyone downloading a release therefore
+has to clear the quarantine flag Gatekeeper sets on it:
+
+```sh
+xattr -dr com.apple.quarantine OptionTab.app
+```
+
+To notarize properly, add `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_TEAM_ID` and an app-specific password as repository secrets, import the
+cert into a temporary keychain, sign with `--options runtime` instead of `--sign -`,
+and run `xcrun notarytool submit --wait` followed by `xcrun stapler staple`.
