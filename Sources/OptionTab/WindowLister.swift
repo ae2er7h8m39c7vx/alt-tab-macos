@@ -20,20 +20,35 @@ struct WindowEntry {
 
 enum WindowLister {
 
-    /// Every switchable window, ordered most-recently-used first.
+    /// The switchable windows in `scope`, ordered most-recently-used first.
     ///
     /// macOS keeps no MRU list we can read, but the on-screen z-order is a faithful
     /// stand-in: the window you used last is the one in front. Minimized and
     /// off-screen windows have no z-order, so they land at the end.
-    static func list() -> [WindowEntry] {
+    static func list(scope: SwitchScope = .allWindows) -> [WindowEntry] {
         let ownPID = ProcessInfo.processInfo.processIdentifier
+
+        // `.frontmostApp` is decided here rather than by filtering afterwards: the
+        // front app is whatever was front when the session opened, and our own panel
+        // never activates, so reading it once is stable for the whole session.
+        let onlyPID: pid_t?
+        switch scope {
+        case .allWindows:
+            onlyPID = nil
+        case .frontmostApp:
+            guard let front = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                  front != ownPID else { return [] }
+            onlyPID = front
+        }
+
         var byID: [CGWindowID: WindowEntry] = [:]
         var unordered: [WindowEntry] = []
 
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular,
                   !app.isTerminated,
-                  app.processIdentifier != ownPID else { continue }
+                  app.processIdentifier != ownPID,
+                  onlyPID == nil || app.processIdentifier == onlyPID else { continue }
 
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             guard let windows = copyValue(axApp, kAXWindowsAttribute) as? [AXUIElement] else { continue }

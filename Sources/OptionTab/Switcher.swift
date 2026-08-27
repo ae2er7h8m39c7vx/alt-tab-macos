@@ -1,5 +1,13 @@
 import AppKit
 
+/// Which windows a session is allowed to offer.
+enum SwitchScope {
+    /// ⌥Tab: every window on the machine.
+    case allWindows
+    /// ⌥`: only the windows of whichever app is front when the session opens.
+    case frontmostApp
+}
+
 /// Owns one switching session: the snapshot of windows, the cursor into it,
 /// and the overlay showing both.
 final class Switcher {
@@ -18,10 +26,12 @@ final class Switcher {
         }
     }
 
-    /// ⌥Tab pressed. Opens a session on the first press, moves the cursor after that.
-    func cycle(backwards: Bool) {
+    /// A chord was pressed. Opens a session on the first press, moves the cursor
+    /// after that — so `scope` only matters on the press that opens one, and a session
+    /// started with ⌥Tab keeps spanning every window even if ⌥` follows it.
+    func cycle(scope: SwitchScope, backwards: Bool) {
         guard isActive else {
-            begin(backwards: backwards)
+            begin(scope: scope, backwards: backwards)
             return
         }
         let count = entries.count
@@ -45,10 +55,10 @@ final class Switcher {
 
     // MARK: -
 
-    private func begin(backwards: Bool) {
+    private func begin(scope: SwitchScope, backwards: Bool) {
         // Snapshot once, at the start: the list must not shuffle underneath the
         // user while they are tabbing through it.
-        entries = WindowLister.list()
+        entries = WindowLister.list(scope: scope)
 
         switch entries.count {
         case 0:

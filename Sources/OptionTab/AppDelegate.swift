@@ -12,7 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusItem()
 
         tap.isSessionActive = { [weak switcher] in switcher?.isActive ?? false }
-        tap.onCycle = { [weak switcher] backwards in switcher?.cycle(backwards: backwards) }
+        tap.onCycle = { [weak switcher] scope, backwards in
+            switcher?.cycle(scope: scope, backwards: backwards)
+        }
         tap.onCommit = { [weak switcher] in switcher?.commit() }
         tap.onCancel = { [weak switcher] in switcher?.cancel() }
 
@@ -61,9 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                      accessibilityDescription: "OptionTab")
 
         let menu = NSMenu()
-        let header = NSMenuItem(title: "⌥Tab switches windows", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
+        for line in ["⌥Tab switches windows", "⌥` switches within the front app"] {
+            let header = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+        }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit OptionTab",
                                 action: #selector(NSApplication.terminate(_:)),

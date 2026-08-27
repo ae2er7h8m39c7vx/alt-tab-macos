@@ -9,15 +9,20 @@ There is no built-in "cycle every window on the machine". This is that, bound to
 
 | Keys | Effect |
 |---|---|
-| `⌥Tab` | Open the switcher, move forward one window |
+| `⌥Tab` | Open the switcher over every window, move forward one |
 | `⌥⇧Tab` | Move backward |
-| `⌥\`` | Same as ⌥Tab (a second chord, if you prefer it) |
+| `⌥\`` | Open the switcher over the front app's windows only, move forward one |
+| `⌥⇧\`` | Move backward |
 | release `⌥` | Focus the highlighted window |
 | `Esc` (while held) | Cancel, change nothing |
 | click a tile | Focus that window |
 
-A single quick ⌥Tab tap flips to the previously-used window, the way ⌘Tab does for apps.
+A single quick ⌥Tab tap flips to the previously-used window, the way ⌘Tab does for apps;
+a single ⌥\` tap does the same within the front app, the way ⌘\` does.
 Minimized windows appear at the end of the list and are un-minimized when chosen.
+
+The scope is fixed by whichever chord opens the session, so pressing ⌥\` part-way
+through an ⌥Tab hold just moves the cursor — it does not narrow the list.
 
 ## Build
 
@@ -52,9 +57,10 @@ live window thumbnails.
 - **`HotKeyTap`** — a `CGEventTap` on the session. A Carbon hot key cannot see a
   modifier being *released*, and "hold ⌥, tab through, release to pick" depends on
   exactly that. The tap also swallows the chord so no app underneath reacts to it.
-- **`WindowLister`** — walks `NSWorkspace.runningApplications`, pulls each app's
-  windows over the Accessibility API (titles, minimized state, and the handles used
-  to raise them), then reorders that set by the front-to-back z-order reported by
+- **`WindowLister`** — walks `NSWorkspace.runningApplications` (or just the frontmost
+  one, for ⌥\`), pulls each app's windows over the Accessibility API (titles,
+  minimized state, and the handles used to raise them), then reorders that set by
+  the front-to-back z-order reported by
   `CGWindowListCopyWindowInfo`. macOS exposes no MRU list, but z-order is an
   accurate stand-in: the last window you used is the one in front. The two views are
   correlated through the private `_AXUIElementGetWindow`, the same bridge AltTab

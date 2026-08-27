@@ -1,15 +1,16 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// A session-wide event tap that owns the ⌥Tab chord.
+/// A session-wide event tap that owns the ⌥Tab and ⌥` chords.
 ///
 /// A Carbon hot key would be simpler, but it cannot observe the *release* of a
 /// modifier — and "hold ⌥, tab through, release to commit" is the whole interaction.
 /// An active tap also lets us swallow the keystrokes so no app underneath sees them.
 final class HotKeyTap {
 
-    /// Advance the selection. `backwards` is ⇧ being held.
-    var onCycle: ((Bool) -> Void)?
+    /// Advance the selection. `backwards` is ⇧ being held; `scope` says which
+    /// windows the chord is about, and is only consulted when it opens a session.
+    var onCycle: ((SwitchScope, Bool) -> Void)?
     /// ⌥ was released — commit the current selection.
     var onCommit: (() -> Void)?
     /// Escape was pressed — abandon the switch.
@@ -66,8 +67,8 @@ final class HotKeyTap {
             let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
             let flags = event.flags
 
-            if isChord(code: code, flags: flags) {
-                onCycle?(flags.contains(.maskShift))
+            if let scope = scope(for: code, flags: flags) {
+                onCycle?(scope, flags.contains(.maskShift))
                 return nil
             }
             if isSessionActive(), code == kVK_Escape {
@@ -95,11 +96,19 @@ final class HotKeyTap {
         }
     }
 
-    /// ⌥Tab, or ⌥` (which macOS users already associate with "next window").
-    /// ⌘ or ⌃ being held means the user meant some other shortcut entirely.
-    private func isChord(code: Int, flags: CGEventFlags) -> Bool {
-        guard code == kVK_Tab || code == kVK_ANSI_Grave else { return false }
-        guard flags.contains(.maskAlternate) else { return false }
-        return !flags.contains(.maskCommand) && !flags.contains(.maskControl)
+    /// The scope the chord opens a session over, or nil if this is not one of ours.
+    ///
+    /// ⌥Tab spans every window; ⌥` stays inside the front app, mirroring the ⌘`
+    /// macOS users already know. ⌘ or ⌃ being held means the user meant some other
+    /// shortcut entirely.
+    private func scope(for code: Int, flags: CGEventFlags) -> SwitchScope? {
+        guard flags.contains(.maskAlternate),
+              !flags.contains(.maskCommand),
+              !flags.contains(.maskControl) else { return nil }
+        switch code {
+        case kVK_Tab: return .allWindows
+        case kVK_ANSI_Grave: return .frontmostApp
+        default: return nil
+        }
     }
 }
