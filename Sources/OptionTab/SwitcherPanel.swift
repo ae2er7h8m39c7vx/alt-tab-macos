@@ -14,8 +14,10 @@ final class SwitcherPanel {
         static let iconSize: CGFloat = 64
         static let spacing: CGFloat = 6
         static let padding: CGFloat = 16
-        static let cornerRadius: CGFloat = 16
-        static let cellCornerRadius: CGFloat = 10
+        static let cornerRadius: CGFloat = 20
+        static let cellCornerRadius: CGFloat = 12
+        /// The Dock's switcher tints the selected tile rather than covering it.
+        static let selectionAlpha: CGFloat = 0.22
         static let borderWidth: CGFloat = 1
     }
 
@@ -53,6 +55,9 @@ final class SwitcherPanel {
         effect.isEmphasized = true
         effect.wantsLayer = true
         effect.layer?.cornerRadius = Metrics.cornerRadius
+        // Dock.app rounds with a continuous curve rather than a circular arc; at
+        // this radius the difference between the two is plainly visible.
+        effect.layer?.cornerCurve = .continuous
         effect.layer?.masksToBounds = true
         effect.layer?.borderWidth = Metrics.borderWidth
         effect.updateRim()
@@ -91,7 +96,8 @@ final class SwitcherPanel {
         cells.forEach { $0.removeFromSuperview() }
         cells = entries.enumerated().map { index, entry in
             let cell = CellView(entry: entry, size: NSSize(width: Metrics.cellWidth, height: Metrics.cellHeight),
-                                iconSize: Metrics.iconSize, cornerRadius: Metrics.cellCornerRadius)
+                                iconSize: Metrics.iconSize, cornerRadius: Metrics.cellCornerRadius,
+                                selectionAlpha: Metrics.selectionAlpha)
             cell.onClick = { [weak self] in self?.onPick?(index) }
             stack.addArrangedSubview(cell)
             return cell
@@ -177,16 +183,29 @@ private final class CellView: NSView {
     var onClick: (() -> Void)?
 
     var isSelected = false {
-        didSet { if isSelected != oldValue { needsDisplay = true } }
+        didSet { if isSelected != oldValue { highlight.isHidden = !isSelected } }
     }
 
-    private let cornerRadius: CGFloat
+    /// A layer rather than a `draw(_:)` fill, so the corners can use the
+    /// continuous curve -- `NSBezierPath` only knows circular arcs.
+    private let highlight = NSView()
+    /// Held because `updateHighlightColor` re-reads it on every appearance flip.
+    private let selectionAlpha: CGFloat
 
-    init(entry: WindowEntry, size: NSSize, iconSize: CGFloat, cornerRadius: CGFloat) {
-        self.cornerRadius = cornerRadius
+    init(entry: WindowEntry, size: NSSize, iconSize: CGFloat,
+         cornerRadius: CGFloat, selectionAlpha: CGFloat) {
+        self.selectionAlpha = selectionAlpha
         super.init(frame: NSRect(origin: .zero, size: size))
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
+
+        highlight.wantsLayer = true
+        highlight.isHidden = true
+        highlight.translatesAutoresizingMaskIntoConstraints = false
+        highlight.layer?.cornerRadius = cornerRadius
+        highlight.layer?.cornerCurve = .continuous
+        addSubview(highlight)
+        updateHighlightColor()
 
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: size.width),
@@ -207,6 +226,11 @@ private final class CellView: NSView {
         addSubview(subtitle)
 
         NSLayoutConstraint.activate([
+            highlight.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            highlight.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            highlight.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            highlight.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+
             icon.centerXAnchor.constraint(equalTo: centerXAnchor),
             icon.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             icon.widthAnchor.constraint(equalToConstant: iconSize),
@@ -224,21 +248,24 @@ private final class CellView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard isSelected else { return }
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2),
-                                xRadius: cornerRadius, yRadius: cornerRadius)
-        // Translucent, so the frosted slab still reads through the highlight; an
-        // opaque fill would sit on the glass as a card rather than tint it.
-        NSColor.selectedContentBackgroundColor.withAlphaComponent(0.55).setFill()
-        path.fill()
-        NSColor.white.withAlphaComponent(0.25).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-    }
-
     override func mouseUp(with event: NSEvent) {
         onClick?()
+    }
+
+    /// Same caveat as the panel's rim: a `CGColor` is frozen at the appearance it
+    /// was read under, so the accent has to be re-resolved on every flip.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateHighlightColor()
+    }
+
+    private func updateHighlightColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            // Translucent, so the frosted slab still reads through the highlight;
+            // an opaque fill would sit on the glass as a card rather than tint it.
+            highlight.layer?.backgroundColor = NSColor.selectedContentBackgroundColor
+                .withAlphaComponent(selectionAlpha).cgColor
+        }
     }
 
     private static func label(_ text: String, size: CGFloat, color: NSColor) -> NSTextField {
