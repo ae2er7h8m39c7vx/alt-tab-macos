@@ -15,6 +15,8 @@ final class SwitcherPanel {
         static let spacing: CGFloat = 6
         static let padding: CGFloat = 16
         static let cornerRadius: CGFloat = 16
+        static let cellCornerRadius: CGFloat = 10
+        static let borderWidth: CGFloat = 1
     }
 
     private let panel: NSPanel
@@ -31,6 +33,8 @@ final class SwitcherPanel {
         )
         panel.isFloatingPanel = true
         panel.level = .popUpMenu
+        // A clear, non-opaque panel is what lets the blur's rounded corners show;
+        // an opaque one would draw square edges behind them.
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -38,13 +42,20 @@ final class SwitcherPanel {
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        let effect = NSVisualEffectView()
+        let effect = GlassView()
+        // `.behindWindow` is what makes the blur sample the desktop rather than
+        // the panel's own contents, and `.active` keeps it alive even though this
+        // panel never becomes key -- the default `.followsWindowActiveState`
+        // renders flat and grey for a switcher that is never focused.
         effect.material = .hudWindow
         effect.blendingMode = .behindWindow
         effect.state = .active
+        effect.isEmphasized = true
         effect.wantsLayer = true
         effect.layer?.cornerRadius = Metrics.cornerRadius
         effect.layer?.masksToBounds = true
+        effect.layer?.borderWidth = Metrics.borderWidth
+        effect.updateRim()
 
         stack.orientation = .horizontal
         stack.spacing = Metrics.spacing
@@ -80,7 +91,7 @@ final class SwitcherPanel {
         cells.forEach { $0.removeFromSuperview() }
         cells = entries.enumerated().map { index, entry in
             let cell = CellView(entry: entry, size: NSSize(width: Metrics.cellWidth, height: Metrics.cellHeight),
-                                iconSize: Metrics.iconSize)
+                                iconSize: Metrics.iconSize, cornerRadius: Metrics.cellCornerRadius)
             cell.onClick = { [weak self] in self?.onPick?(index) }
             stack.addArrangedSubview(cell)
             return cell
@@ -128,6 +139,37 @@ final class SwitcherPanel {
     }
 }
 
+// MARK: - Background
+
+/// The frosted slab behind the tiles.
+///
+/// Subclassed for the hairline rim. `rimColor` resolves differently per
+/// appearance, and `CGColor` has no such notion -- it is whatever the appearance
+/// was when `.cgColor` was read -- so the layer's border has to be re-resolved
+/// each time the system flips between light and dark.
+private final class GlassView: NSVisualEffectView {
+
+    /// The rim is what separates the blur from the desktop; without it the panel's
+    /// edge dissolves into whatever is behind it. A light lift works over the dark
+    /// HUD material, but on a light desktop only a darker line is visible.
+    static let rimColor = NSColor(name: "switcherRim") { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return isDark ? NSColor.white.withAlphaComponent(0.18)
+                      : NSColor.black.withAlphaComponent(0.12)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateRim()
+    }
+
+    func updateRim() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = Self.rimColor.cgColor
+        }
+    }
+}
+
 // MARK: - Cell
 
 private final class CellView: NSView {
@@ -138,7 +180,10 @@ private final class CellView: NSView {
         didSet { if isSelected != oldValue { needsDisplay = true } }
     }
 
-    init(entry: WindowEntry, size: NSSize, iconSize: CGFloat) {
+    private let cornerRadius: CGFloat
+
+    init(entry: WindowEntry, size: NSSize, iconSize: CGFloat, cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
         super.init(frame: NSRect(origin: .zero, size: size))
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -181,9 +226,15 @@ private final class CellView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard isSelected else { return }
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 10, yRadius: 10)
-        NSColor.selectedContentBackgroundColor.withAlphaComponent(0.85).setFill()
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2),
+                                xRadius: cornerRadius, yRadius: cornerRadius)
+        // Translucent, so the frosted slab still reads through the highlight; an
+        // opaque fill would sit on the glass as a card rather than tint it.
+        NSColor.selectedContentBackgroundColor.withAlphaComponent(0.55).setFill()
         path.fill()
+        NSColor.white.withAlphaComponent(0.25).setStroke()
+        path.lineWidth = 1
+        path.stroke()
     }
 
     override func mouseUp(with event: NSEvent) {
